@@ -51,6 +51,16 @@ class PanasonicApiClient:
     def __init__(self, hass: HomeAssistant, ssid: str | None = None) -> None:
         self._hass = hass
         self.ssid = ssid
+        self._msg_id = 0
+
+    def _next_msg_id(self, base: int) -> int:
+        """Return a request id that changes on every poll.
+
+        The H5 client uses an incrementing message id.  Keeping it fixed can
+        make the cloud return a cached response for the whole request body.
+        """
+        self._msg_id += 1
+        return base + self._msg_id
 
     async def authenticate(self, username: str, password: str) -> LoginResult:
         """Run the full login flow and return the account devices."""
@@ -142,7 +152,7 @@ class PanasonicApiClient:
         res = await self._post(
             self._endpoint_url(endpoint),
             {
-                "id": endpoint.request_id,
+                "id": self._next_msg_id(endpoint.request_id),
                 "usrId": usr_id,
                 "deviceId": device_id,
                 "token": token,
@@ -175,7 +185,7 @@ class PanasonicApiClient:
         return await self._post(
             self._endpoint_url(endpoint),
             {
-                "id": endpoint.request_id,
+                "id": self._next_msg_id(endpoint.request_id),
                 "usrId": usr_id,
                 "deviceId": device_id,
                 "token": token,
@@ -279,6 +289,8 @@ class PanasonicApiClient:
             "DNT": "1",
             "Origin": "https://app.psmartcloud.com",
             "X-Requested-With": "XMLHttpRequest",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
         }
         if profile and profile.cookie_required and self.ssid:
             headers["Cookie"] = f"SSID={self.ssid}"
