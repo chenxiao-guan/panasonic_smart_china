@@ -176,6 +176,7 @@ class PanasonicBaseEntity(ClimateEntity):
         """Expose raw protocol data to make model bring-up easier."""
         return {
             "device_id": self._device_id,
+            "entity_name": self._attr_name,
             "running_mode": self._last_params.get("runningMode"),
             "last_sent_params": self._last_sent_params,
             "last_set_response": self._last_set_response,
@@ -584,13 +585,17 @@ class PanasonicBathroomHeaterEntity(PanasonicBaseEntity):
                 "DIYnextStepNo": 2,
             }
         params.update(changes)
+        mode = params.get("runningMode")
         if self._profile.force_time_set_modes:
-            mode = params.get("runningMode")
             params["timeSet"] = (
                 self._profile.time_set_value
                 if mode in self._profile.force_time_set_modes
                 else 255
             )
+        elif self._profile.time_set_mode_keys:
+            time_key = self._profile.time_set_mode_keys.get(mode)
+            if time_key and current_params.get(time_key) is not None:
+                params["timeSet"] = current_params[time_key]
         return params
 
 

@@ -54,6 +54,7 @@ class PanasonicProfile:
     control_payload_template: dict[str, Any] = field(default_factory=dict)
     force_time_set_modes: frozenset[int] = frozenset()
     time_set_value: int = 3
+    time_set_mode_keys: dict[int, str] = field(default_factory=dict)
     nanoe_mode: int | None = None
 
     def matches_category(self, category_id: str | None) -> bool:

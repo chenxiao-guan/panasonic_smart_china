@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import time
 from typing import Any
 
 import async_timeout
@@ -261,7 +262,10 @@ class PanasonicApiClient:
         return headers
 
     def _endpoint_url(self, endpoint: PanasonicEndpoint) -> str:
-        return f"{BASE_URL}/{endpoint.path}"
+        # The official H5 client appends ?ran=<ms> to every control request.
+        # Without it the cloud edge cache can keep returning the first status
+        # snapshot, which makes entities look permanently "off".
+        return f"{BASE_URL}/{endpoint.path}?ran={int(time.time() * 1000)}"
 
     def _control_headers(
         self,

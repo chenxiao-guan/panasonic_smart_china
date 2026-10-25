@@ -23,9 +23,20 @@ from ..models import (
 )
 
 HVAC_MAPPING = {
-    HVACMode.OFF: 0x20,
+    HVACMode.OFF: 0x00,
     HVACMode.FAN_ONLY: 0x26,
     HVACMode.DRY: 0x28,
+}
+
+# When the H5 client starts a mode it also sends that mode's remembered timer
+# value.  Sending 255 ("no change") is accepted by the API but some devices
+# ignore the whole command, so mirror the H5 behaviour here.
+TIME_SET_MODE_KEYS = {
+    0x26: "remAirHighTimeSet",
+    0x27: "remAirLowTimeSet",
+    0x28: "remCoolHighTimeSet",
+    0x29: "remCoolLowTimeSet",
+    0x2D: "remDegermTimeSet",
 }
 
 # Default payload copied from the official 54BA1C H5 client setData object.
@@ -70,9 +81,11 @@ BATHROOM_HEATER_0820_FV_54BD1C_PROFILE = PanasonicProfile(
     default_hvac_mode=HVACMode.FAN_ONLY,
     hvac_mapping=HVAC_MAPPING,
     control_payload_template=CONTROL_PAYLOAD_TEMPLATE,
-    # No forced 15-minute timer for this model.
+    # No forced 15-minute timer for this model; use the remembered timer for
+    # the selected mode instead.
     force_time_set_modes=frozenset(),
-    # Nanox X is exposed as a HA preset because it has no HVAC equivalent.
+    time_set_mode_keys=TIME_SET_MODE_KEYS,
+    # Nanoe X is exposed as a HA preset because it has no HVAC equivalent.
     nanoe_mode=0x2D,
     cookie_required=True,
 )
