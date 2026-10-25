@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import time
 from datetime import timedelta
@@ -149,6 +150,9 @@ class PanasonicBaseEntity(ClimateEntity):
         self._last_status_at: float | None = None
         self._last_status_error: str | None = None
         self._status_poll_count = 0
+        self._poll_attempt_count = 0
+        self._last_poll_started_at: float | None = None
+        self._poll_lock = asyncio.Lock()
 
         # 定时器句柄
         self._unsub_polling = None
@@ -188,6 +192,8 @@ class PanasonicBaseEntity(ClimateEntity):
             "last_status_at": self._last_status_at,
             "last_status_error": self._last_status_error,
             "status_poll_count": self._status_poll_count,
+            "poll_attempt_count": self._poll_attempt_count,
+            "last_poll_started_at": self._last_poll_started_at,
             "raw_status": self._last_params,
         }
 
@@ -203,9 +209,27 @@ class PanasonicBaseEntity(ClimateEntity):
             self._unsub_polling = None
         await super().async_will_remove_from_hass()
 
-    async def _async_update_interval_wrapper(self, now):
-        await self.async_update()
-        self.async_write_ha_state()
+    def _async_update_interval_wrapper(self, now):
+        """Schedule a poll without blocking the interval scheduler.
+
+        If one cloud request hangs, the next interval tick still fires and
+        increments poll_attempt_count instead of silently stopping polling.
+        """
+        self._hass.async_create_task(self._async_poll_once())
+
+    async def _async_poll_once(self):
+        self._poll_attempt_count += 1
+        self._last_poll_started_at = time.time()
+        if self._poll_lock.locked():
+            _LOGGER.debug(
+                "Skipping poll for %s; previous poll still running", self._device_id
+            )
+            return
+        async with self._poll_lock:
+            try:
+                await self.async_update()
+            finally:
+                self.async_write_ha_state()
 
     # --- 通用属性 ---
 
