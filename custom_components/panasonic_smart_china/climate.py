@@ -1,4 +1,5 @@
 import logging
+import time
 from datetime import timedelta
 from typing import Any
 
@@ -145,6 +146,9 @@ class PanasonicBaseEntity(ClimateEntity):
         self._last_sent_params: dict[str, Any] = {}
         self._last_set_response: Any = None
         self._last_error: str | None = None
+        self._last_status_at: float | None = None
+        self._last_status_error: str | None = None
+        self._status_poll_count = 0
 
         # 定时器句柄
         self._unsub_polling = None
@@ -181,6 +185,9 @@ class PanasonicBaseEntity(ClimateEntity):
             "last_sent_params": self._last_sent_params,
             "last_set_response": self._last_set_response,
             "last_error": self._last_error,
+            "last_status_at": self._last_status_at,
+            "last_status_error": self._last_status_error,
+            "status_poll_count": self._status_poll_count,
             "raw_status": self._last_params,
         }
 
@@ -249,6 +256,9 @@ class PanasonicBaseEntity(ClimateEntity):
                 self._token,
             )
             self._last_params = res.copy()
+            self._last_status_at = time.time()
+            self._last_status_error = None
+            self._status_poll_count += 1
             _LOGGER.debug("Raw status for %s: %s", self._device_id, res)
             if update_internal_state:
                 self._available = True
@@ -256,11 +266,13 @@ class PanasonicBaseEntity(ClimateEntity):
             return res
         except PanasonicApiAuthError as err:
             self._available = False
+            self._last_status_error = str(err)
             _LOGGER.error("Panasonic session expired for %s: %s", self._device_id, err)
             raise ConfigEntryAuthFailed("Panasonic Smart China session expired") from err
         except PanasonicApiError as err:
             if update_internal_state:
                 self._available = False
+            self._last_status_error = str(err)
             _LOGGER.debug("Fetch status failed for %s: %s", self._device_id, err)
             return None
 
