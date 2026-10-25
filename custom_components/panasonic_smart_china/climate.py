@@ -1,5 +1,6 @@
 import logging
 from datetime import timedelta
+from typing import Any
 
 from homeassistant.components.climate import ClimateEntity
 from homeassistant.components.climate.const import (
@@ -141,6 +142,9 @@ class PanasonicBaseEntity(ClimateEntity):
         self._target_temperature = 26.0
         self._last_active_target_temperature = self._target_temperature
         self._last_params = {}
+        self._last_sent_params: dict[str, Any] = {}
+        self._last_set_response: Any = None
+        self._last_error: str | None = None
 
         # 定时器句柄
         self._unsub_polling = None
@@ -166,6 +170,18 @@ class PanasonicBaseEntity(ClimateEntity):
         if self._account_device_id:
             device_info["via_device_id"] = self._account_device_id
         return device_info
+
+    @property
+    def extra_state_attributes(self):
+        """Expose raw protocol data to make model bring-up easier."""
+        return {
+            "device_id": self._device_id,
+            "running_mode": self._last_params.get("runningMode"),
+            "last_sent_params": self._last_sent_params,
+            "last_set_response": self._last_set_response,
+            "last_error": self._last_error,
+            "raw_status": self._last_params,
+        }
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
@@ -232,6 +248,7 @@ class PanasonicBaseEntity(ClimateEntity):
                 self._token,
             )
             self._last_params = res.copy()
+            _LOGGER.debug("Raw status for %s: %s", self._device_id, res)
             if update_internal_state:
                 self._available = True
                 self._update_local_state(res)
@@ -266,22 +283,33 @@ class PanasonicBaseEntity(ClimateEntity):
 
         # 2. Build payload (委托给子类)
         params = self._build_send_payload(changes, current_params)
+        self._last_sent_params = params
+        self._last_error = None
 
         # 3. Write
         try:
-            await self._api.set_device_status(
+            self._last_set_response = await self._api.set_device_status(
                 self._profile,
                 self._usr_id,
                 self._device_id,
                 self._token,
                 params,
             )
+            _LOGGER.debug(
+                "Set %s params=%s response=%s",
+                self._device_id,
+                params,
+                self._last_set_response,
+            )
         except PanasonicApiAuthError as err:
             self._available = False
+            self._last_error = str(err)
             _LOGGER.error("Panasonic session expired while setting %s: %s", self._device_id, err)
             raise ConfigEntryAuthFailed("Panasonic Smart China session expired") from err
         except PanasonicApiError as err:
+            self._last_error = str(err)
             _LOGGER.error("Set failed for %s: %s", self._device_id, err)
+            self.async_write_ha_state()
             return
 
         # 4. 仅在服务端接受指令后更新本地状态
@@ -470,7 +498,30 @@ class PanasonicBathroomHeaterEntity(PanasonicBaseEntity):
 
     @property
     def supported_features(self):
-        return ClimateEntityFeature.TURN_ON | ClimateEntityFeature.TURN_OFF
+        features = ClimateEntityFeature.TURN_ON | ClimateEntityFeature.TURN_OFF
+        if self._profile.nanoe_mode is not None:
+            features |= ClimateEntityFeature.PRESET_MODE
+        return features
+
+    @property
+    def preset_modes(self):
+        if self._profile.nanoe_mode is None:
+            return None
+        return ["纳诺怡X"]
+
+    @property
+    def preset_mode(self):
+        if (
+            self._profile.nanoe_mode is not None
+            and _as_int(self._last_params.get("runningMode")) == self._profile.nanoe_mode
+        ):
+            return "纳诺怡X"
+        return None
+
+    async def async_set_preset_mode(self, preset_mode):
+        if preset_mode != "纳诺怡X" or self._profile.nanoe_mode is None:
+            return
+        await self._send_command({"runningMode": self._profile.nanoe_mode})
 
     @property
     def current_temperature(self):
@@ -510,26 +561,36 @@ class PanasonicBathroomHeaterEntity(PanasonicBaseEntity):
         }
 
     def _build_off_command(self):
-        return {"runningMode": 32}
+        return {"runningMode": self._hvac_map.get(HVACMode.OFF, 32)}
 
     def _build_send_payload(self, changes, current_params):
-        """Build the fixed FV-RB20VL1 control payload."""
-        params = {
-            "runningMode": 32,
-            "warmTempset": 255,
-            "windDirectionSet": 255,
-            "windKindSet": 255,
-            "timeSet": 255,
-            "lightSet": 255,
-            "DIYnextRunningMode": 255,
-            "DIYnextWarmTempset": 255,
-            "DIYnextwindDirectionSet": 255,
-            "DIYnextwindKindSet": 255,
-            "DIYnextTimeSet": 255,
-            "DIYnextStepNo": 2,
-        }
+        """Build the bathroom heater control payload."""
+        if self._profile.control_payload_template:
+            params = dict(self._profile.control_payload_template)
+        else:
+            # Legacy FV-RB20VL1 payload.
+            params = {
+                "runningMode": self._hvac_map.get(HVACMode.OFF, 32),
+                "warmTempset": 255,
+                "windDirectionSet": 255,
+                "windKindSet": 255,
+                "timeSet": 255,
+                "lightSet": 255,
+                "DIYnextRunningMode": 255,
+                "DIYnextWarmTempset": 255,
+                "DIYnextwindDirectionSet": 255,
+                "DIYnextwindKindSet": 255,
+                "DIYnextTimeSet": 255,
+                "DIYnextStepNo": 2,
+            }
         params.update(changes)
-        params["timeSet"] = 3 if params["runningMode"] in (37, 38) else 255
+        if self._profile.force_time_set_modes:
+            mode = params.get("runningMode")
+            params["timeSet"] = (
+                self._profile.time_set_value
+                if mode in self._profile.force_time_set_modes
+                else 255
+            )
         return params
 
 

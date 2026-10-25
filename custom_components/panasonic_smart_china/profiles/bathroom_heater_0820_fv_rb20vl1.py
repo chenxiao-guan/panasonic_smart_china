@@ -25,7 +25,7 @@ BATHROOM_HEATER_0820_FV_RB20VL1_PROFILE = PanasonicProfile(
     controller_model="FV-RB20VL1",
     name="松下风暖浴霸 (FV-RB20VL1)",
     category_ids=frozenset({"0820"}),
-    model_ids=frozenset({"FV-RB20VL1", "Aircle-05-02", "54BD1C", "FV-54BD1C"}),
+    model_ids=frozenset({"FV-RB20VL1", "Aircle-05-02"}),
     ha_platforms=(PLATFORM_CLIMATE,),
     entity_kind=ENTITY_KIND_BATHROOM_HEATER,
     protocol=PROTOCOL_BATHROOM_HEATER,
@@ -43,6 +43,8 @@ BATHROOM_HEATER_0820_FV_RB20VL1_PROFILE = PanasonicProfile(
     ),
     default_hvac_mode=HVACMode.FAN_ONLY,
     hvac_mapping=HVAC_MAPPING,
+    force_time_set_modes=frozenset({37, 38}),
+    time_set_value=3,
     cookie_required=True,
     referer_template=(
         "https://app.psmartcloud.com/ca/cn/0820/RB20VL1/index.html"

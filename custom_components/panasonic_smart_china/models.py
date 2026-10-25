@@ -51,6 +51,10 @@ class PanasonicProfile:
     cookie_required: bool = False
     referer_template: str | None = None
     extra_control_headers: dict[str, str] = field(default_factory=dict)
+    control_payload_template: dict[str, Any] = field(default_factory=dict)
+    force_time_set_modes: frozenset[int] = frozenset()
+    time_set_value: int = 3
+    nanoe_mode: int | None = None
 
     def matches_category(self, category_id: str | None) -> bool:
         """Return whether this profile supports a Panasonic category id."""
